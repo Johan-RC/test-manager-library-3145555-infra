@@ -1,0 +1,82 @@
+# Manager Library — local infrastructure
+#
+# Brings up the empty PostgreSQL engine plus the API and the frontend.
+# ONE COMMAND:  docker compose up
+#
+# Article V / ADR-001: this file creates an EMPTY engine. It contains no
+# CREATE TABLE, no seed and no domain SQL. All DDL belongs to the application
+# migrations in the `api` repository.
+
+name: manager-library
+
+services:
+  db:
+    image: postgres:16-alpine
+    container_name: ml-db
+    environment:
+      POSTGRES_USER: library
+      POSTGRES_PASSWORD: library
+      POSTGRES_DB: library
+      # The engine starts with no `library` schema and no tables.
+      POSTGRES_INITDB_ARGS: "--encoding=UTF8 --locale=C"
+    ports:
+      - "5432:5432"
+    volumes:
+      - db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U library -d library"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    networks:
+      - ml-net
+
+  api:
+    build:
+      context: https://github.com/Johan-RC/test-manager-library-3145555-api.git
+      target: runtime
+    container_name: ml-api
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      APP_ENV: local
+      APP_DEBUG: "true"
+      DB_HOST: db
+      DB_PORT: "5432"
+      DB_DATABASE: library
+      DB_USERNAME: library
+      DB_PASSWORD: library
+      JWT_SECRET: ${JWT_SECRET:?set JWT_SECRET in a local .env file}
+      JWT_TTL_SECONDS: "28800"
+      ADMIN_USERNAME: ${ADMIN_USERNAME:-admin}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:?set ADMIN_PASSWORD in a local .env file}
+      COVERS_DIR: /var/lib/library/covers
+      CORS_ORIGIN: http://localhost:5173
+    ports:
+      - "8000:8000"
+    volumes:
+      - covers:/var/lib/library/covers
+    networks:
+      - ml-net
+
+  app:
+    build:
+      context: https://github.com/Johan-RC/test-manager-library-3145555-app.git
+      args:
+        VITE_API_BASE_URL: http://localhost:8000/api/v1
+    container_name: ml-app
+    depends_on:
+      - api
+    ports:
+      - "5173:5173"
+    networks:
+      - ml-net
+
+volumes:
+  db-data:
+  covers:
+
+networks:
+  ml-net:
+    driver: bridge
